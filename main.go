@@ -2,7 +2,7 @@ package main
 
 import (
 	"database/sql"
-	_ "encoding/json"
+	"encoding/json"
 	"fmt"
 	_ "html/template"
 	"log"
@@ -10,21 +10,41 @@ import (
 	"os"
 
 	_ "github.com/lib/pq"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // JSONData it is JSON objeck what must came from outsideS
 type JSONData struct {
-	name      string
-	fcm_token string
-	viewer_id string
-	viewrname string
+	Name       *string `json:"name"`
+	FCMToken   *string `json:"fcm_token"`
+	ViewerID   *string `json:"viewer_id"`
+	ViewerName *string `json:"viewer_name"`
 }
 
-// var db *sql.DB
+//JSONDataDetail detail representation of Viewer device
+type JSONDataDetail struct {
+	ID         int     `json:"id"`
+	Name       *string `json:"name"`
+	FCMToken   *string `json:"fcm_token"`
+	ViewerID   *string `json:"viewer_id"`
+	ViewerName *string `json:"viewer_name"`
+}
+
+var db *sql.DB
 
 // Env global structure for save all neaded global variables
 type Env struct {
 	db *sql.DB
+}
+
+//DBConnection TODO work on function DB connection and close the connection use 'defer'
+func DBConnection() (*sql.DB, error) {
+	db, err := sql.Open("sqlite3", "fcm_t.db")
+	if err != nil {
+		log.Panic(err)
+		// errors.New("Db connection not exist!")
+	}
+	return db, nil
 }
 
 // InitDB initiate connection to database
@@ -53,15 +73,17 @@ func InitDB(dataSourceName string) (*sql.DB, error) {
 
 func main() {
 	var hostPort string = "127.0.0.1:8800"
-	var databaseURI string = "postgres://user:pass@localhost/bookstore" //need add normal user and pass :)
+	// var databaseURI string = "postgres://user:pass@localhost/bookstore" //need add normal user and pass :)
 
-	dbURI := os.Getenv("DBURI")
+	// dbURI := os.Getenv("DBURI")
 
-	if dbURI != "" {
-		databaseURI = dbURI
-	}
+	// if dbURI != "" {
+	// 	databaseURI = dbURI
+	// }
 
-	db, err := InitDB(databaseURI)
+	// db, err := InitDB(databaseURI)
+
+	db, err := DBConnection()
 
 	if err != nil {
 		log.Panicf("Database connection error! %v", err)
@@ -76,14 +98,36 @@ func main() {
 	}
 
 	log.Printf("Servers started at: %v", hostPort)
-	http.Handle("/", CreateFCMToken(env))
+	http.HandleFunc("/", env.CreateFCMToken)
 	fmt.Println(http.ListenAndServe(hostPort, nil))
 
 }
 
 // CreateFCMToken handler for saving FCM tokens in database
-func CreateFCMToken(w http.ResponseWriter, r *http.Request, env *Env) {
+func (env Env) CreateFCMToken(w http.ResponseWriter, r *http.Request) {
 	// TODO finish   https://www.alexedwards.net/blog/organising-database-access
+	decoder := json.NewDecoder(r.Body)
+	var t JSONData
+	err := decoder.Decode(&t)
+	// var p JSONData
+	data, _ := json.Marshal(t)
+
+	if err != nil {
+		log.Printf("Can not read JSON from BODY! %v", err)
+		http.Error(w, "Invalid JSON!", http.StatusBadRequest)
+		return
+	}
+	log.Printf("Accepted JSON: %s", data)
+
+	rows, err := db.Exec("INSERT INTO devices (name, fcm_token, viewer_id, viewer_name) VALUES ($1, $2, $3, $4)", t.Name, t.FCMToken, t.ViewerID, t.ViewerName)
+
+	if err != nil {
+		log.Printf("Error is raiced! %v", err)
+	}
+	for rows.Next {
+		log.Printf("ID: %v, FCM: %v, viewer: %v, Viewer_name %v", rows.ID, rows.Name)
+
+	}
 }
 
 // UpdateFCMToken handler for saving FCM tokens in database
